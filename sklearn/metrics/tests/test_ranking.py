@@ -28,6 +28,7 @@ from sklearn.metrics import roc_auc_score
 from sklearn.metrics import roc_curve
 from sklearn.metrics._ranking import _ndcg_sample_scores, _dcg_sample_scores
 from sklearn.metrics import ndcg_score, dcg_score
+from sklearn.metrics import err_score
 
 from sklearn.exceptions import UndefinedMetricWarning
 
@@ -1469,3 +1470,31 @@ def test_partial_roc_auc_score():
         assert_almost_equal(
             roc_auc_score(y_true, y_pred, max_fpr=max_fpr),
             _partial_roc_auc_score(y_true, y_pred, max_fpr))
+
+
+def test_err_score():
+    # regular case: normal model
+
+    # edge case: no relavant one
+
+    # edge case: all have maximum relavance
+
+    # edge case: tie 
+
+    # edge case: 
+
+    # edge case: k=1
+
+    # edge case: k=0
+
+    # regular case: extended cascade model
+
+    # edge case: gamma=0
+
+    # edge case: gamma=1
+
+    # edge case: maximum max_gain
+
+    # exception case: max_gain is over the limit
+
+    pass

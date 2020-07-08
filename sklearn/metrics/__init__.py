@@ -11,6 +11,7 @@ from ._ranking import dcg_score
 from ._ranking import label_ranking_average_precision_score
 from ._ranking import label_ranking_loss
 from ._ranking import ndcg_score
+from ._ranking import err_score
 from ._ranking import precision_recall_curve
 from ._ranking import roc_auc_score
 from ._ranking import roc_curve
@@ -131,6 +132,7 @@ __all__ = [
     'multilabel_confusion_matrix',
     'mutual_info_score',
     'ndcg_score',
+    'err_score', 
     'normalized_mutual_info_score',
     'pairwise_distances',
     'pairwise_distances_argmin',
