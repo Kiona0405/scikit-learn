@@ -1441,3 +1441,175 @@ def ndcg_score(y_true, y_score, *, k=None, sample_weight=None,
     _check_dcg_target_type(y_true)
     gain = _ndcg_sample_scores(y_true, y_score, k=k, ignore_ties=ignore_ties)
     return np.average(gain, weights=sample_weight)
+
+def _err_sample_scores(y_true, y_score, k=None, gain_max=None, 
+        gamma=None, ignore_ties=False):
+    """Compute Normalized Discounted Cumulative Gain.
+
+    Sum the true scores ranked in the order induced by the predicted scores,
+    after applying a logarithmic discount. Then divide by the best possible
+    score (Ideal DCG, obtained for a perfect ranking) to obtain a score between
+    0 and 1.
+
+    This ranking metric yields a high value if true labels are ranked high by
+    ``y_score``.
+
+    Parameters
+    ----------
+    y_true : ndarray, shape (n_samples, n_labels)
+        True targets of multilabel classification, or true scores of entities
+        to be ranked.
+
+    y_score : ndarray, shape (n_samples, n_labels)
+        Target scores, can either be probability estimates, confidence values,
+        or non-thresholded measure of decisions (as returned by
+        "decision_function" on some classifiers).
+
+    k : int, default=None
+        Only consider the highest k scores in the ranking. If None, use all
+        outputs.
+
+    ignore_ties : bool, default=False
+        Assume that there are no ties in y_score (which is likely to be the
+        case if y_score is continuous) for efficiency gains.
+
+    Returns
+    -------
+    normalized_discounted_cumulative_gain : ndarray, shape (n_samples,)
+        The NDCG score for each sample (float in [0., 1.]).
+
+    See also
+    --------
+    dcg_score : Discounted Cumulative Gain (not normalized).
+
+    """
+    # sort ranking
+    ranking = np.argsort(y_score)[:, ::-1]
+    ranked = y_true[np.arange(ranking.shape[0])[:, np.newaxis], ranking]
+
+    if gain_max is None:
+        gain_max = np.max(ranked)
+
+    # calculate probability of stop at each rank
+    gains = np.power(np.ones(ranked.shape) * 2, y_true) - 1
+    probs = gains / np.power(2, gain_max)
+    cum_not_probs = np.ones(y_true.shape)
+    cum_not_probs[:, 1:] *= np.cumprod(1-probs, axis=1)[:, :-1]
+    stop_probs = probs * cum_not_probs
+
+    if k is not None:
+        stop_probs[k:] = 0
+
+    if gamma is None:
+        # get expected reciprocal rank
+        rec_ranks = 1 / np.arange(1, y_true.shape[1]+1)
+        exp_rec_rank = stop_probs.dot(rec_ranks)
+    else:
+        # extended cascade model ver
+        examine_next = np.ones(y_true.shape[1]) * gamma
+        examine_next[:, 1:] = np.cumprod(examine_next)[:, :-1]
+        exp_rec_rank = np.sum(stop_probs * examine_next, axis=1)
+    return exp_rec_rank
+
+@_deprecate_positional_args
+def err_score(y_true, y_score, *, k=None, 
+        sample_weight=None, gamma=None, ignore_ties=False):
+    """Compute Exptected Reciprocal Rank.
+
+    Sum the true scores ranked in the order induced by the predicted scores,
+    after applying a logarithmic discount. Then divide by the best possible
+    score (Ideal DCG, obtained for a perfect ranking) to obtain a score between
+    0 and 1.
+
+    This ranking metric yields a high value if true labels are ranked high by
+    ``y_score``.
+
+    Parameters
+    ----------
+    y_true : ndarray, shape (n_samples, n_labels)
+        True targets of multilabel classification, or true scores of entities
+        to be ranked.
+
+    y_score : ndarray, shape (n_samples, n_labels)
+        Target scores, can either be probability estimates, confidence values,
+        or non-thresholded measure of decisions (as returned by
+        "decision_function" on some classifiers).
+
+    k : int, default=None
+        Only consider the highest k scores in the ranking. If None, use all
+        outputs.
+
+    sample_weight : ndarray of shape (n_samples,),default=None
+        Sample weights. If None, all samples are given the same weight.
+
+    ignore_ties : bool, default=False
+        Assume that there are no ties in y_score (which is likely to be the
+        case if y_score is continuous) for efficiency gains.
+
+    Returns
+    -------
+    normalized_discounted_cumulative_gain : float in [0., 1.]
+        The averaged NDCG scores for all samples.
+
+    See also
+    --------
+    dcg_score : Discounted Cumulative Gain (not normalized).
+
+    References
+    ----------
+    `Wikipedia entry for Discounted Cumulative Gain
+    <https://en.wikipedia.org/wiki/Discounted_cumulative_gain>`_
+
+    Jarvelin, K., & Kekalainen, J. (2002).
+    Cumulated gain-based evaluation of IR techniques. ACM Transactions on
+    Information Systems (TOIS), 20(4), 422-446.
+
+    Wang, Y., Wang, L., Li, Y., He, D., Chen, W., & Liu, T. Y. (2013, May).
+    A theoretical analysis of NDCG ranking measures. In Proceedings of the 26th
+    Annual Conference on Learning Theory (COLT 2013)
+
+    McSherry, F., & Najork, M. (2008, March). Computing information retrieval
+    performance measures efficiently in the presence of tied scores. In
+    European conference on information retrieval (pp. 414-421). Springer,
+    Berlin, Heidelberg.
+
+    Examples
+    --------
+    >>> from sklearn.metrics import ndcg_score
+    >>> # we have groud-truth relevance of some answers to a query:
+    >>> true_relevance = np.asarray([[10, 0, 0, 1, 5]])
+    >>> # we predict some scores (relevance) for the answers
+    >>> scores = np.asarray([[.1, .2, .3, 4, 70]])
+    >>> ndcg_score(true_relevance, scores)
+    0.69...
+    >>> scores = np.asarray([[.05, 1.1, 1., .5, .0]])
+    >>> ndcg_score(true_relevance, scores)
+    0.49...
+    >>> # we can set k to truncate the sum; only top k answers contribute.
+    >>> ndcg_score(true_relevance, scores, k=4)
+    0.35...
+    >>> # the normalization takes k into account so a perfect answer
+    >>> # would still get 1.0
+    >>> ndcg_score(true_relevance, true_relevance, k=4)
+    1.0
+    >>> # now we have some ties in our prediction
+    >>> scores = np.asarray([[1, 0, 0, 0, 1]])
+    >>> # by default ties are averaged, so here we get the average (normalized)
+    >>> # true relevance of our top predictions: (10 / 10 + 5 / 10) / 2 = .75
+    >>> ndcg_score(true_relevance, scores, k=1)
+    0.75
+    >>> # we can choose to ignore ties for faster results, but only
+    >>> # if we know there aren't ties in our scores, otherwise we get
+    >>> # wrong results:
+    >>> ndcg_score(true_relevance,
+    ...           scores, k=1, ignore_ties=True)
+    0.5
+
+    """
+    y_true = check_array(y_true)
+    y_score = check_array(y_score)
+    check_consistent_length(y_true, y_score, sample_weight)
+    _check_dcg_target_type(y_true)
+    exp_rec_rank = _err_sample_scores(y_true, y_score, k=k, ignore_ties=ignore_ties)
+    return np.average(exp_rec_rank, weights=sample_weight)
+
